@@ -37,12 +37,13 @@ def home():
 @app.post("/answer-image")
 async def answer_image(data: ImageQuestion):
     try:
-        image_data = data.image_base64
+
+        image = data.image_base64.strip()
 
         mime = "image/png"
 
-        if image_data.startswith("data:"):
-            header, image_data = image_data.split(",", 1)
+        if image.startswith("data:"):
+            header, image = image.split(",", 1)
 
             if "jpeg" in header or "jpg" in header:
                 mime = "image/jpeg"
@@ -51,10 +52,29 @@ async def answer_image(data: ImageQuestion):
             elif "png" in header:
                 mime = "image/png"
 
-        image_bytes = base64.b64decode(image_data)
+        image_bytes = base64.b64decode(image)
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
+            model="gemini-2.5-flash",
+            config=types.GenerateContentConfig(
+                temperature=0,
+                system_instruction="""
+You are a precise document-reading AI.
+
+Read charts, invoices, receipts, tables and scanned documents.
+
+Rules:
+- Answer ONLY the user's question.
+- Never explain.
+- Never add extra words.
+- If the answer is numeric, output only the number.
+- Remove currency symbols.
+- Remove commas from numbers.
+- Do not include units unless explicitly asked.
+- Preserve names exactly.
+- If multiple values exist, choose the correct one based on the question.
+"""
+            ),
             contents=[
                 types.Part.from_bytes(
                     data=image_bytes,
@@ -64,14 +84,19 @@ async def answer_image(data: ImageQuestion):
             ],
         )
 
-        answer = response.text or ""
+        answer = (response.text or "").strip()
+
+        answer = answer.replace("$", "")
+        answer = answer.replace("₹", "")
+        answer = answer.replace(",", "")
+        answer = answer.replace('"', "")
 
         return {
-            "answer": answer.strip()
+            "answer": answer
         }
 
     except Exception as e:
         print(e)
         return {
-            "answer": str(e)
+            "answer": ""
         }
