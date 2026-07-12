@@ -1,0 +1,69 @@
+# Multimodal Image QA API
+
+FastAPI service implementing `POST /answer-image` per the spec.
+
+## Files
+- `main.py` — the API
+- `requirements.txt` — Python deps
+- `Procfile` — for Render/Railway/Heroku-style platforms
+
+## Run locally
+
+```bash
+pip install -r requirements.txt
+export ANTHROPIC_API_KEY=sk-ant-...
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Test it:
+
+```bash
+python3 - <<'EOF'
+import base64, requests, json
+
+with open("scanned_doc.png", "rb") as f:
+    b64 = base64.b64encode(f.read()).decode()
+
+r = requests.post("http://localhost:8000/answer-image", json={
+    "image_base64": b64,
+    "question": "What is the total sales value across all months shown in the chart?"
+})
+print(r.status_code, r.text)
+EOF
+```
+
+## Deploy
+
+**Render.com (recommended, free tier works):**
+1. Push this folder to a GitHub repo.
+2. New Web Service → connect repo.
+3. Build command: `pip install -r requirements.txt`
+4. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+5. Add environment variable `ANTHROPIC_API_KEY` in the dashboard.
+6. Deploy, then your URL is `https://<your-app>.onrender.com`.
+
+**HuggingFace Spaces (Docker SDK)** or **Fly.io** work the same way — just make sure
+`ANTHROPIC_API_KEY` is set as a secret/env var on the platform, since it is never
+hardcoded in the code.
+
+Submit the base URL (no trailing `/answer-image`) to the grader — it appends
+the path itself.
+
+## Why you were getting HTTP 500
+
+The most common causes, in order of likelihood:
+
+1. **Missing/invalid `ANTHROPIC_API_KEY`** on the deployed host — check the
+   platform's logs, they'll show `ERROR: ...` printed from the except block.
+2. **Malformed base64** — some senders include a `data:image/png;base64,` prefix;
+   this code strips it if present, but confirm your grader doesn't send raw
+   bytes in another field name.
+3. **CORS preflight failing** — this app allows all origins/methods/headers,
+   which should satisfy a Cloudflare Worker caller.
+4. **Request timeout** — if your host has a short timeout (e.g. 10s on some
+   free tiers) and the model call takes longer, you'll see a 500/504. Consider
+   using a faster model or increasing the platform's timeout setting if this
+   happens under load.
+
+Check your platform's live logs after a failed request — the `print("ERROR:", ...)`
+line will show the exact exception.
