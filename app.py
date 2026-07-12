@@ -1,7 +1,7 @@
 import os
 import base64
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -23,30 +23,56 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 class ImageRequest(BaseModel):
     image_base64: str
     question: str
+
 
 @app.get("/")
 def home():
     return {"status": "running"}
 
+
 @app.post("/answer-image")
 def answer_image(req: ImageRequest):
+    try:
+        image_data = req.image_base64.strip()
 
-    image_bytes = base64.b64decode(req.image_base64)
+        # Support both raw base64 and data URLs
+        if "," in image_data:
+            image_data = image_data.split(",", 1)[1]
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[
-            types.Part.from_bytes(
-                data=image_bytes,
-                mime_type="image/png"
-            ),
-            req.question + "\nReturn only the answer. If it is a number, return only the number."
-        ]
-    )
+        image_bytes = base64.b64decode(image_data)
 
-    return {
-        "answer": response.text.strip()
-    }
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type="image/png"
+                ),
+                f"""
+Question: {req.question}
+
+Answer ONLY the requested value.
+
+Rules:
+- Return only the answer.
+- Do not explain.
+- If the answer is numeric, return only the number.
+- Do not include currency symbols, commas, units, or extra words.
+"""
+            ]
+        )
+
+        answer = response.text.strip()
+
+        return {
+            "answer": str(answer)
+        }
+
+    except Exception as e:
+        return {
+            "answer": str(e)
+        }
