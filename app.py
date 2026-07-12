@@ -36,20 +36,42 @@ def home():
 
 @app.post("/answer-image")
 async def answer_image(data: ImageQuestion):
+    try:
+        image_data = data.image_base64
 
-    image_bytes = base64.b64decode(data.image_base64)
+        mime = "image/png"
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[
-            types.Part.from_bytes(
-                data=image_bytes,
-                mime_type="image/png",
-            ),
-            data.question,
-        ],
-    )
+        if image_data.startswith("data:"):
+            header, image_data = image_data.split(",", 1)
 
-    return {
-        "answer": response.text.strip()
-    }
+            if "jpeg" in header or "jpg" in header:
+                mime = "image/jpeg"
+            elif "webp" in header:
+                mime = "image/webp"
+            elif "png" in header:
+                mime = "image/png"
+
+        image_bytes = base64.b64decode(image_data)
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=[
+                types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type=mime,
+                ),
+                data.question,
+            ],
+        )
+
+        answer = response.text or ""
+
+        return {
+            "answer": answer.strip()
+        }
+
+    except Exception as e:
+        print(e)
+        return {
+            "answer": str(e)
+        }
