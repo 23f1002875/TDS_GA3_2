@@ -99,13 +99,26 @@ def clean_text_answer(s):
     return s
 
 
+last_debug_info = {}
+
+
 @app.get("/")
 async def root():
     return {"ok": True, "email": config.EMAIL}
 
 
+@app.get("/debug")
+async def get_debug():
+    """After a failed grader Check, open https://<your-url>.onrender.com/debug
+    in a browser to see exactly what the model was asked, what it saw, and what
+    it returned for the LAST call. This tells you if it's a reading error, a
+    math error, or a formatting error."""
+    return last_debug_info
+
+
 @app.post("/answer-image")
 async def answer_image(request: Request):
+    global last_debug_info
     body = await request.json()
     img_b64 = body.get("image_base64", "")
     question = body.get("question", "")
@@ -145,9 +158,17 @@ async def answer_image(request: Request):
         }
     ]
 
+    last_debug_info = {
+        "question": question,
+        "img_b64_len": len(img_b64),
+        "img_b64_prefix": img_b64[:30],
+    }
+
     try:
         raw = await chat(messages, model=config.VISION_MODEL, max_tokens=1200)
+        last_debug_info["raw_model_output"] = raw
         out = parse_json(raw)
+        last_debug_info["parsed_json"] = out
 
         values = out.get("values", [])
         raw_answer = out.get("answer", "")
@@ -163,14 +184,19 @@ async def answer_image(request: Request):
                 total = sum(nums)
                 total = int(total) if float(total).is_integer() else round(total, 2)
                 ans = str(total)
-            except Exception:
+                last_debug_info["computed_from_values"] = True
+            except Exception as e:
+                last_debug_info["sum_error"] = str(e)
                 ans = None
 
         if ans is None:
             numeric = normalize_numeric(raw_answer)
             ans = numeric if numeric is not None else clean_text_answer(raw_answer)
 
-    except Exception:
+        last_debug_info["final_answer"] = ans
+
+    except Exception as e:
+        last_debug_info["exception"] = str(e)
         ans = ""
 
     return {"answer": str(ans)}
